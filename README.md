@@ -99,6 +99,23 @@ python bot.py
 | `DB_PATH` | No | `1812.db` | Path to SQLite database file |
 | `WEB_HOST` | No | `0.0.0.0` | FastAPI sidecar host |
 | `WEB_PORT` | No | `8080` | FastAPI sidecar port |
+| `SHUTDOWN_AFTER_MINUTES` | No | unset (= unbounded) | Auto-shutdown timer in minutes. CLI `--shutdown-after N` overrides this. |
+
+---
+
+## CLI Flags
+
+| Flag | Description |
+|---|---|
+| `--shutdown-after N` | Self-shutdown after N minutes of runtime. Overrides `SHUTDOWN_AFTER_MINUTES`. `0` is an explicit "unbounded" sentinel that clears any env value. Useful for time-boxed runs, cron jobs, and CI canaries. |
+
+```bash
+# Run for exactly two hours, then graceful shutdown.
+python bot.py --shutdown-after 120
+
+# Wipe an env-configured timer for this invocation only.
+SHUTDOWN_AFTER_MINUTES=30 python bot.py --shutdown-after 0
+```
 
 ---
 

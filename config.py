@@ -45,12 +45,29 @@ class Settings(BaseSettings):
     web_host: str = "0.0.0.0"
     web_port: int = 8080
 
+    # Auto-shutdown after N minutes of runtime. None = unbounded (default).
+    # Useful for time-boxed runs, scheduled jobs, and CI canaries.
+    # CLI `--shutdown-after MINUTES` overrides this env value.
+    shutdown_after_minutes: int | None = None
+
     @field_validator("llm_provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:
         allowed = {"openai", "anthropic", "ollama", "openrouter"}
         if v not in allowed:
             raise ValueError(f"llm_provider must be one of {allowed}")
+        return v
+
+    @field_validator("shutdown_after_minutes")
+    @classmethod
+    def validate_shutdown_after_minutes(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError(
+                "shutdown_after_minutes must be a positive integer "
+                "(unset / null = unbounded)"
+            )
         return v
 
 

@@ -3,6 +3,7 @@
 1812 — Discord chatbot
 """
 
+import argparse
 import asyncio
 import logging
 import signal
@@ -272,7 +273,60 @@ async def slash_forget(interaction: discord.Interaction):
 
 # --- Graceful shutdown ---
 
-async def main():
+def _parse_argv(argv: list[str] | None = None) -> argparse.Namespace:
+    """CLI parsing extracted so unit tests can drive it without sys.argv mutation."""
+    parser = argparse.ArgumentParser(
+        prog="1812",
+        description="1812 — Discord chatbot with configurable LLM backends.",
+    )
+    parser.add_argument(
+        "--shutdown-after",
+        type=int,
+        default=None,
+        metavar="MINUTES",
+        help=(
+            "Auto-shutdown the bot after this many minutes of runtime. "
+            "Overrides the shutdown_after_minutes config / env value. "
+            "Omit (or pass 0) for unbounded runtime."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def resolve_shutdown_minutes(
+    cli_value: int | None,
+    config_value: int | None,
+) -> int | None:
+    """CLI argument wins; falls back to the config value; None = unbounded.
+
+    `0` from the CLI is treated as an explicit "unbounded" sentinel so an
+    operator can wipe an env-configured timeout from the command line
+    without having to delete the env var.
+    """
+    if cli_value is not None:
+        return cli_value if cli_value > 0 else None
+    return config_value
+
+
+async def auto_shutdown_after(minutes: int, bot_to_close: discord.Client) -> None:
+    """Sleep for `minutes`, then call bot.close() to trigger a clean shutdown.
+
+    Logged at start (so the operator sees the deadline they're committed to)
+    and again right before closing the bot (so it's clear *why* the bot
+    exited if it lands in a log aggregator without context).
+    """
+    log.info({"event": "auto_shutdown_armed", "minutes": minutes})
+    await asyncio.sleep(minutes * 60)
+    log.info({"event": "auto_shutdown_firing", "minutes": minutes})
+    await bot_to_close.close()
+
+
+async def main(argv: list[str] | None = None) -> None:
+    args = _parse_argv(argv)
+    shutdown_minutes = resolve_shutdown_minutes(
+        args.shutdown_after, settings.shutdown_after_minutes
+    )
+
     loop = asyncio.get_running_loop()
 
     def shutdown(signum: int):
@@ -281,6 +335,12 @@ async def main():
 
     loop.add_signal_handler(signal.SIGTERM, shutdown, signal.SIGTERM)
     loop.add_signal_handler(signal.SIGINT, shutdown, signal.SIGINT)
+
+    if shutdown_minutes is not None:
+        # Background timer task — cancelled automatically when the event
+        # loop shuts down. We don't await it directly because the bot's
+        # gateway loop is the foreground task.
+        loop.create_task(auto_shutdown_after(shutdown_minutes, bot))
 
     async with bot:
         await bot.start(settings.discord_token)
