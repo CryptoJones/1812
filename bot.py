@@ -272,14 +272,19 @@ async def slash_forget(interaction: discord.Interaction):
 
 # --- Graceful shutdown ---
 
-def handle_shutdown(signum, frame):
-    log.info({"event": "shutdown", "signal": signum})
-    asyncio.get_event_loop().stop()
+async def main():
+    loop = asyncio.get_running_loop()
 
+    def shutdown(signum: int):
+        log.info({"event": "shutdown", "signal": signum})
+        loop.create_task(bot.close())
 
-signal.signal(signal.SIGTERM, handle_shutdown)
-signal.signal(signal.SIGINT, handle_shutdown)
+    loop.add_signal_handler(signal.SIGTERM, shutdown, signal.SIGTERM)
+    loop.add_signal_handler(signal.SIGINT, shutdown, signal.SIGINT)
+
+    async with bot:
+        await bot.start(settings.discord_token)
 
 
 if __name__ == "__main__":
-    bot.run(settings.discord_token, log_handler=None)
+    asyncio.run(main())
